@@ -10,45 +10,45 @@ ___________________________________________________________________________
 
 2. Нормалізуйте таблицю infectious_cases. Збережіть у цій же схемі дві таблиці з нормалізованими даними.
 
-2_1 Створюю таблицю entity з такими ж назвами колонок, як і ті, що планую переносити з таблиці infectious_cases.
-Проаналізувавши дані, дійшла до висновку, що Code має бути першинним ключем:
+2_1 Створюю таблицю entities та вставлюю унікальні комбінації значень з колонок Entity і Code 
+з таблиці infectious_cases в таблицю entities:
 
 create table entity(
 	Code varchar(50) unique primary key,
     	Entity varchar(50) unique
 );
 
-2_2 Вставлюю унікальні комбінації значень з колонок Entity і Code з таблиці infectious_cases в таблицю entity:
+insert into entities (Entity, Code)
+select distinct Entity, Code from infectious_cases;
 
-insert into entity (Entity, Code)
-select distinct Entity, Code
-from infectious_cases;
+2_2 Створюю копію infectious_cases під назвою infectious_cases_norm:
 
-2_3 Роблю з колонки Code в таблиці infectious_cases зовнішній ключ під назвою entity_code:
+create table infectious_cases_norm 
+as select * from infectious_cases;
 
-alter table infectious_cases
-change column Code entity_code varchar(50),
-add foreign key (entity_code) references entity(Code);
 
-2_4 Роблю перевірку, результатом якої буде кількість рядків, які мають неспівпадаючі значення в колонці Entity 
-між таблицями infectious_cases і entity, або для яких відсутнє відповідне значення в таблиці entity.
+2_3 Створюю в таблиці infectious_cases_norm атрибути id та entity_id, який буде зовнішнім ключем:
 
-select COUNT(*) as mismatch_count
-from infectious_cases as inf
-left join entity as ent on inf.entity_code = ent.Code
-where inf.Entity != ent.Entity or ent.Code is null;
+alter table infectious_cases_norm 
+add id int auto_increment primary key first,
+add entity_id int,
+add foreign key (entity_id) references entities(id);
 
-2_5 Так як результатом перевірки є 0, то видаляємо зайвий атрибут Entity з таблиці infectious_cases:
+2_4 Оновлення значень стовпця entity_id на основі зв'язку з таблицею entities та видалення 
+вже не потрібних атрибутів Code та Entity:
 
-alter table infectious_cases
+set sql_safe_updates = 0;
+
+update infectious_cases_norm i, entities e
+set i.entity_id = e.id
+where e.Code = i.Code;
+
+set sql_safe_updates = 1;
+
+alter table infectious_cases_norm 
+drop column Code,
 drop column Entity;
 
-2_6 Перейменувала два атрибута, щоб привести до єдиного фірмату написання атрибутів:
-
-alter table  infectious_cases
-	change column polio_cases Polio_cases int default 0,
-	change column cases_guinea_worm Cases_guinea_worm int default 0
-;
 ___________________________________________________________________________
 
 3. Проаналізуйте дані:
@@ -58,23 +58,20 @@ ___________________________________________________________________________
 
 Результат відсортуйте за порахованим середнім значенням у порядку спадання.
 Оберіть тільки 10 рядків для виведення на екран.
+use pandemic;
 
 select
-	ent.Code,
-    ent.Entity,
-    avg(inf.Number_rabies) as avg_rabies,
-    min(inf.Number_rabies) as min_rabies,
-    max(inf.Number_rabies) as max_rabies,
-    sum(inf.Number_rabies) as sum_rabies
+    id,
+    avg(Number_rabies) as avg_rabies,
+    min(Number_rabies) as min_rabies,
+    max(Number_rabies) as max_rabies,
+    sum(Number_rabies) as sum_rabies
 from
-	entity as ent
-join
-	infectious_cases as inf 
-    on ent.Code = inf.entity_code
+	infectious_cases_norm 
 where
-	inf.Number_rabies <> ''
+	Number_rabies <> '' and Number_rabies is not null
 group by
-	ent.Code, ent.Entity
+	id
 order by
      avg_rabies desc
 limit 10;
@@ -93,22 +90,25 @@ ___________________________________________________________________________
 
 👉🏼 Для пошуку необхідних вбудованих функцій вам може знадобитися матеріал до теми 7.
 
+use pandemic;
 
-alter table infectious_cases
+alter table infectious_cases_norm 
 add column year_new_format date,
 add column now_date date,
 add column difference_date int;
 
--- set sql_safe_updates = 0;
+set sql_safe_updates = 0;
 
-update infectious_cases
+update infectious_cases_norm 
 set year_new_format = str_to_date(concat(Year, '-01-01'), '%Y-%m-%d');
 
--- set sql_safe_updates = 1;
-
-update infectious_cases
+update infectious_cases_norm 
 set now_date = curdate(),
     difference_date = timestampdiff(year, year_new_format, now_date);
+    
+set sql_safe_updates = 1;
+
+select * from infectious_cases_norm;
 
 ___________________________________________________________________________
 
@@ -140,5 +140,16 @@ begin
 end//
 DELIMITER ;
 
-update infectious_cases
+set sql_safe_updates = 0;
+
+update infectious_cases_norm 
 set difference_date = YearDifferenceCount(Year);
+
+set sql_safe_updates = 1;
+
+select * from infectious_cases_norm;
+
+
+
+
+
